@@ -16,6 +16,7 @@ extra-source-files:  CHANGELOG.md
 executable ye
   main-is:             Main.hs
   other-modules:       LoadBalance
+                      , Config
   -- other-extensions:
   extensions:     ScopedTypeVariables
   build-depends:    base

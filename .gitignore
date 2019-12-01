@@ -2,3 +2,5 @@ dist
 dist-newstyle
 .vscode
 .ghc*
+*.hi
+*.o
