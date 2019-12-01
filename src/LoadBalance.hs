@@ -52,12 +52,13 @@ dispatcher config sock = do
 
 messageReader :: NS.Socket -> LBC.MessageChannel -> IO ()
 messageReader sock readChannel =
-  forever $ do
+  forever $ catch (do
     msgBytes <- NSB.recv sock 4096
     let msg = C.unpack msgBytes
     if msg == ""
       then NS.close sock
       else LBC.pushMsgToChannel msg readChannel
+   )  (\(e :: IOError) -> return ())
 
 
 connectToServer :: Config -> String -> String -> IO (NS.Socket)
