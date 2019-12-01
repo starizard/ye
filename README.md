@@ -1,6 +1,6 @@
 # Ye
 
-A TCP load balancer in Haskell
+A simple TCP load balancer in Haskell
 
 
 ## Usage
@@ -18,15 +18,15 @@ to run this use:
 
 
 ```
-ye  --listenPort 4242 --remoteHost mybackend.com --remotePort 80 --debug
+ye  --listenPort 4242 --remoteHosts mybackend-1.com:4000,mybackend-2.com:3000,mybackend-3.com:80 --debug
 ```
 
 or
 
 ```
-ye  --l 4242 -r mybackend.com -p 80 -d
+ye -l 4242 -r mybackend-1.com:4000,mybackend-2.com:3000,mybackend-3.com:80   -d
 ```
 
 
 
-This starts a listener at `localhost:4242` which forwards traffic to `mybackend.com:80`
+This starts a listener at `localhost:4242` which forwards traffic to the backends `mybackend-1.com:4000,  mybackend-2.com:3000,  mybackend-3.com:80` in a round robin distribution
