@@ -5,7 +5,7 @@ version:             0.1.0.0
 synopsis:            A tcp load balancer
 -- description:
 -- bug-reports:
-license:             BSD-3-Clause
+license:             Apache-2.0
 license-file:        LICENSE
 author:              Shawn Rebello
 maintainer:          shawn.nigel@gmail.com
