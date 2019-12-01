@@ -31,16 +31,25 @@ mainLoop config sock =
   forever $ do
     (conn, peer) <- accept sock
     putStrLn $ "Connection from peer: " <> show peer
-    forkIO $ messageReader conn
+    downstreamChannel <- createChannel
+    upstreamChannel <- createChannel
+    backendSock <- connectToServer config (getHost config) (getPort config)
+    forkIO $ messageReader conn downstreamChannel
+    forkIO $ messageReader backendSock upstreamChannel
+ where getHost config = remoteHost config
+       getPort config = remotePort config
 
-messageReader :: Socket -> IO ()
-messageReader sock =
+
+
+messageReader :: Socket -> MessageChannel -> IO ()
+messageReader sock readChannel =
   forever $ do
     msgBytes <- recv sock 4096
     let msg = C.unpack msgBytes
     if msg == ""
       then close sock
-      else putStrLn $ "Got msg: " <> msg
+      else pushMsgToChannel msg readChannel
+
 
 connectToServer :: Config -> String -> String -> IO (Socket)
 connectToServer config host port =  catch (do
