@@ -8,4 +8,4 @@ main :: IO ()
 main = do
   cliConfig <- execParser (info initFlags (fullDesc))
   putStrLn $ "Starting with flags: " <> show cliConfig
-  startLoadBalance
+  startLoadBalance cliConfig
