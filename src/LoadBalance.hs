@@ -34,10 +34,15 @@ mainLoop config sock =
     downstreamChannel <- createChannel
     upstreamChannel <- createChannel
     backendSock <- connectToServer config (getHost config) (getPort config)
+
     forkIO $ messageReader conn downstreamChannel
     forkIO $ messageReader backendSock upstreamChannel
- where getHost config = remoteHost config
-       getPort config = remotePort config
+    -- Draining channels from upstream - downstream & vice versa
+    forkIO $ drainChannelToSocket downstreamChannel backendSock
+    forkIO $ drainChannelToSocket upstreamChannel conn
+
+  where getHost config = remoteHost config
+        getPort config = remotePort config
 
 
 
@@ -67,3 +72,17 @@ connectToServer config host port =  catch (do
     threadDelay 1000000
     connectToServer config host port
   )
+
+
+drainChannelToSocket :: MessageChannel -> Socket -> IO ()
+drainChannelToSocket channel destinationSocket = do
+  putStrLn $ "draining channel worker started"
+  forever $ do
+    msg <- atomically $ readTChan channel
+    putStrLn $ "Got from channel " <> msg
+    let msgBytes = C.pack msg
+    catch (send destinationSocket msgBytes)
+      (\(e :: IOError) -> do
+        putStrLn $ "drain channel send failed " ++ show e
+        return 0
+      )
