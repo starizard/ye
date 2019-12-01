@@ -10,6 +10,7 @@ import           Network.Socket.ByteString
 import           Control.Exception
 import           Control.Concurrent.STM
 import           Control.Concurrent.STM.TChan
+import           Data.List.Split
 
 
 startLoadBalance :: Config -> IO ()
@@ -27,23 +28,29 @@ startLoadBalance config = do
   mainLoop config sock
 
 mainLoop :: Config -> Socket -> IO ()
-mainLoop config sock =
+mainLoop config sock = do
+  let backends =  (splitOn ":") <$> (splitOn "," (getHost config))
   forever $ do
     (conn, peer) <- accept sock
     putStrLn $ "Connection from peer: " <> show peer
     downstreamChannel <- createChannel
     upstreamChannel <- createChannel
-    backendSock <- connectToServer config (getHost config) (getPort config)
+
+    backendSockets <- traverse (connectBackend config) backends
+    mapM_ (\backendSock-> do
+              -- Send message from backend to channel
+              forkIO $ messageReader backendSock upstreamChannel
+              -- Send message from channel to backend
+              forkIO $ drainChannelToSocket downstreamChannel backendSock
+          ) backendSockets
 
     forkIO $ messageReader conn downstreamChannel
-    forkIO $ messageReader backendSock upstreamChannel
     -- Draining channels from upstream - downstream & vice versa
-    forkIO $ drainChannelToSocket downstreamChannel backendSock
     forkIO $ drainChannelToSocket upstreamChannel conn
 
-  where getHost config = remoteHost config
-        getPort config = remotePort config
-
+  where connectBackend config [host, port] = connectToServer config host port
+        connectBackend config [host] = connectToServer config host "80"
+        connectBackend config _ = error "Host not supplied"
 
 
 messageReader :: Socket -> MessageChannel -> IO ()
