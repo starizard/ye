@@ -1,8 +1,11 @@
 module LoadBalance where
 
-import           Network.Socket
-
 import           Config
+import           Control.Concurrent
+import           Control.Monad
+import qualified Data.ByteString.Char8     as C
+import           Network.Socket
+import           Network.Socket.ByteString
 
 startLoadBalance :: Config -> IO ()
 startLoadBalance config = do
@@ -16,4 +19,20 @@ startLoadBalance config = do
   bind sock (addrAddress addr)
   listen sock backLog
   print $ "Listening on port " <> port
-  putStrLn "started load balancer"
+  mainLoop config sock
+
+mainLoop :: Config -> Socket -> IO ()
+mainLoop config sock =
+  forever $ do
+    (conn, peer) <- accept sock
+    putStrLn $ "Connection from peer: " <> show peer
+    forkIO $ messageReader conn
+
+messageReader :: Socket -> IO ()
+messageReader sock =
+  forever $ do
+    msgBytes <- recv sock 4096
+    let msg = C.unpack msgBytes
+    if msg == ""
+      then close sock
+      else putStrLn $ "Got msg: " <> msg
