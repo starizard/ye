@@ -4,37 +4,34 @@ import           Config
 import           Control.Concurrent
 import           Control.Monad
 import qualified Data.ByteString.Char8     as C
-import           LoadBalance.Channel
-import           Network.Socket
-import           Network.Socket.ByteString
+import qualified LoadBalance.Channel       as LBC
+import qualified Network.Socket as NS
+import qualified Network.Socket.ByteString as NSB
 import           Control.Exception
-import           Control.Concurrent.STM
-import           Control.Concurrent.STM.TChan
 import           Data.List.Split
 
 
 startLoadBalance :: Config -> IO ()
 startLoadBalance config = do
-  let hints = defaultHints {addrFlags = [AI_PASSIVE], addrSocketType = Stream}
+  let hints = NS.defaultHints {NS.addrFlags = [NS.AI_PASSIVE], NS.addrSocketType = NS.Stream}
       backLog = 5
       port = listenPort config
-      workerCount = 1
-  addr:_ <- getAddrInfo (Just hints) Nothing $ Just port
-  sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-  setSocketOption sock ReuseAddr 1
-  bind sock (addrAddress addr)
-  listen sock backLog
+  addr:_ <- NS.getAddrInfo (Just hints) Nothing $ Just port
+  sock <- NS.socket (NS.addrFamily addr) (NS.addrSocketType addr) (NS.addrProtocol addr)
+  NS.setSocketOption sock NS.ReuseAddr 1
+  NS.bind sock (NS.addrAddress addr)
+  NS.listen sock backLog
   print $ "Listening on port " <> port
-  mainLoop config sock
+  dispatcher config sock
 
-mainLoop :: Config -> Socket -> IO ()
-mainLoop config sock = do
-  let backends =  (splitOn ":") <$> (splitOn "," (getHost config))
+dispatcher :: Config -> NS.Socket -> IO ()
+dispatcher config sock = do
+  let backends =  (splitOn ":") <$> (splitOn "," (remoteHosts config))
   forever $ do
-    (conn, peer) <- accept sock
+    (conn, peer) <- NS.accept sock
     putStrLn $ "Connection from peer: " <> show peer
-    downstreamChannel <- createChannel
-    upstreamChannel <- createChannel
+    downstreamChannel <- LBC.createChannel
+    upstreamChannel <- LBC.createChannel
 
     backendSockets <- traverse (connectBackend config) backends
     mapM_ (\backendSock-> do
@@ -53,24 +50,24 @@ mainLoop config sock = do
         connectBackend config _ = error "Host not supplied"
 
 
-messageReader :: Socket -> MessageChannel -> IO ()
+messageReader :: NS.Socket -> LBC.MessageChannel -> IO ()
 messageReader sock readChannel =
   forever $ do
-    msgBytes <- recv sock 4096
+    msgBytes <- NSB.recv sock 4096
     let msg = C.unpack msgBytes
     if msg == ""
-      then close sock
-      else pushMsgToChannel msg readChannel
+      then NS.close sock
+      else LBC.pushMsgToChannel msg readChannel
 
 
-connectToServer :: Config -> String -> String -> IO (Socket)
+connectToServer :: Config -> String -> String -> IO (NS.Socket)
 connectToServer config host port =  catch (do
   let upstream = host <> ":" <> port
-  let hints = defaultHints { addrSocketType = Stream }
-  addrinfos <- getAddrInfo (Just hints) (Just host) (Just port)
+      hints = NS.defaultHints { NS.addrSocketType = NS.Stream }
+  addrinfos <- NS.getAddrInfo (Just hints) (Just host) (Just port)
   let serveraddr = head addrinfos
-  server <- socket (addrFamily serveraddr) Stream defaultProtocol
-  connect server (addrAddress serveraddr)
+  server <- NS.socket (NS.addrFamily serveraddr) NS.Stream NS.defaultProtocol
+  NS.connect server (NS.addrAddress serveraddr)
   putStrLn $ "connected to " <> upstream
   return server)
   (\(e::IOError) -> do
@@ -81,14 +78,14 @@ connectToServer config host port =  catch (do
   )
 
 
-drainChannelToSocket :: MessageChannel -> Socket -> IO ()
+drainChannelToSocket :: LBC.MessageChannel -> NS.Socket -> IO ()
 drainChannelToSocket channel destinationSocket = do
   putStrLn $ "draining channel worker started"
   forever $ do
-    msg <- atomically $ readTChan channel
+    msg <- LBC.getMsgFromChannel channel
     putStrLn $ "Got from channel " <> msg
     let msgBytes = C.pack msg
-    catch (send destinationSocket msgBytes)
+    catch (NSB.send destinationSocket msgBytes)
       (\(e :: IOError) -> do
         putStrLn $ "drain channel send failed " ++ show e
         return 0

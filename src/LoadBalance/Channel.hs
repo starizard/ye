@@ -10,3 +10,6 @@ createChannel = atomically newTChan
 
 pushMsgToChannel :: String -> MessageChannel -> IO ()
 pushMsgToChannel msg channel = atomically $ writeTChan channel msg
+
+getMsgFromChannel :: MessageChannel -> IO String
+getMsgFromChannel = atomically . readTChan
