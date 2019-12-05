@@ -33,6 +33,7 @@ dispatcher config sock = do
   balancer <- LBS.getBalancer balancingStrategy
   forever $ do
     (conn, peer) <- NS.accept sock
+    let [clientHost, clientPort] = (splitOn ":" (show peer))
     putStrLn $ "Connection from peer: " <> show peer
     downstreamChannel <- LBC.createChannel
     upstreamChannel <- LBC.createChannel
@@ -45,12 +46,13 @@ dispatcher config sock = do
               forkIO $ drainChannelToSocket upstreamChannel conn
 
           ) backendSockets
+    let requestState = LBS.RequestState clientHost clientPort backendSockets
 
   
     -- Copy message from client to channel
     forkIO $ messageReader conn downstreamChannel 
     -- Drain message from channel to backend
-    forkIO $ drainChannelToSockets downstreamChannel (balancer backendSockets)
+    forkIO $ drainChannelToSockets downstreamChannel (balancer requestState)
 
 
 

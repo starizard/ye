@@ -10,16 +10,24 @@ data Strategies
   = ROUND_ROBIN
   | LEAST_CONN
 
-getBalancer :: Strategies -> IO ([NS.Socket] -> IO NS.Socket)
+data RequestState =
+  RequestState
+    { clientHost     :: String
+    , clientPort     :: String
+    , backendSockets :: [NS.Socket]
+    }
+
+getBalancer :: Strategies -> IO (RequestState -> IO NS.Socket)
 getBalancer balancingStrategy = do
   case balancingStrategy of
     ROUND_ROBIN -> do
       counter <- newTVarIO 0
       return (roundRobinBalancer counter)
-    _ -> return (\sockets -> return $ head sockets)
+    _ -> return (\reqState -> return $ head (backendSockets reqState))
 
-roundRobinBalancer :: TVar Int -> [NS.Socket] -> IO NS.Socket
-roundRobinBalancer counter sockets = do
+roundRobinBalancer :: TVar Int -> RequestState -> IO NS.Socket
+roundRobinBalancer counter reqState = do
+  let sockets = backendSockets reqState
   idx <- readTVarIO counter
   atomically $ writeTVar counter (getIdx (idx + 1) (length sockets))
   return $ sockets !! idx
