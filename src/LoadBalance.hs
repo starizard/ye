@@ -2,9 +2,11 @@ module LoadBalance where
 
 import           Config
 import           Control.Concurrent
+import           Control.Concurrent.STM
 import           Control.Monad
 import qualified Data.ByteString.Char8     as C
 import qualified LoadBalance.Channel       as LBC
+import qualified LoadBalance.Strategies as LBS
 import qualified Network.Socket as NS
 import qualified Network.Socket.ByteString as NSB
 import           Control.Exception
@@ -27,23 +29,30 @@ startLoadBalance config = do
 dispatcher :: Config -> NS.Socket -> IO ()
 dispatcher config sock = do
   let backends =  (splitOn ":") <$> (splitOn "," (remoteHosts config))
+      balancingStrategy = LBS.ROUND_ROBIN
+  balancer <- LBS.getBalancer balancingStrategy
   forever $ do
     (conn, peer) <- NS.accept sock
     putStrLn $ "Connection from peer: " <> show peer
     downstreamChannel <- LBC.createChannel
     upstreamChannel <- LBC.createChannel
-
     backendSockets <- traverse (connectBackend config) backends
     mapM_ (\backendSock-> do
-              -- Send message from backend to channel
+              -- Copy message from backend to channel
               forkIO $ messageReader backendSock upstreamChannel
-              -- Send message from channel to backend
-              forkIO $ drainChannelToSocket downstreamChannel backendSock
+
+              -- Drain message from channel to client
+              forkIO $ drainChannelToSocket upstreamChannel conn
+
           ) backendSockets
 
-    forkIO $ messageReader conn downstreamChannel
-    -- Draining channels from upstream - downstream & vice versa
-    forkIO $ drainChannelToSocket upstreamChannel conn
+  
+    -- Copy message from client to channel
+    forkIO $ messageReader conn downstreamChannel 
+    -- Drain message from channel to backend
+    forkIO $ drainChannelToSockets downstreamChannel (balancer backendSockets)
+
+
 
   where connectBackend config [host, port] = connectToServer config host port
         connectBackend config [host] = connectToServer config host "80"
@@ -78,6 +87,19 @@ connectToServer config host port =  catch (do
     connectToServer config host port
   )
 
+drainChannelToSockets :: LBC.MessageChannel -> IO NS.Socket -> IO ()
+drainChannelToSockets channel balancer = do
+  putStrLn $ "draining channel worker started"
+  forever $ do
+    msg <- LBC.getMsgFromChannel channel
+    destinationSocket <- balancer
+    putStrLn $ "Got from channel " <> msg
+    let msgBytes = C.pack msg
+    catch (NSB.send destinationSocket msgBytes)
+      (\(e :: IOError) -> do
+        putStrLn $ "drain channel send failed " ++ show e
+        return 0
+      )
 
 drainChannelToSocket :: LBC.MessageChannel -> NS.Socket -> IO ()
 drainChannelToSocket channel destinationSocket = do
