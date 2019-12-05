@@ -17,6 +17,7 @@ executable ye
   main-is:             Main.hs
   other-modules:       LoadBalance
                       , LoadBalance.Channel
+                      , LoadBalance.Strategies
                       , Config
   -- other-extensions:
   extensions:     ScopedTypeVariables
