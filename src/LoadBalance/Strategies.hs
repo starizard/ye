@@ -4,11 +4,16 @@ import           Control.Concurrent
 import           Control.Concurrent.STM
 import           Control.Exception
 import           Control.Monad
-import qualified Network.Socket         as NS
+import           Crypto.Hash
+import qualified Data.ByteString.Internal as B
+
+-- import qualified Data.ByteString.Lazy.Internal as BL
+import qualified Network.Socket           as NS
 
 data Strategies
   = ROUND_ROBIN
   | LEAST_CONN
+  | SOURCE_IP_HASH
 
 data RequestState =
   RequestState
@@ -23,7 +28,16 @@ getBalancer balancingStrategy = do
     ROUND_ROBIN -> do
       counter <- newTVarIO 0
       return (roundRobinBalancer counter)
+    SOURCE_IP_HASH -> return hashIPBalancer
     _ -> return (\reqState -> return $ head (backendSockets reqState))
+
+hashIPBalancer :: RequestState -> IO NS.Socket
+hashIPBalancer reqState = do
+  let sockets = backendSockets reqState
+      hashedClientIP = hashIP $ (clientHost reqState) ++ (clientPort reqState)
+      hashValue = foldl (+) 1 (fromEnum <$> hashedClientIP)
+      targetServerIdx = hashValue `mod` (length sockets)
+  return $ sockets !! targetServerIdx
 
 roundRobinBalancer :: TVar Int -> RequestState -> IO NS.Socket
 roundRobinBalancer counter reqState = do
@@ -33,3 +47,8 @@ roundRobinBalancer counter reqState = do
   return $ sockets !! idx
   where
     getIdx value max = value `mod` max
+
+hashIP :: String -> String
+hashIP plaintext =
+  B.unpackChars $
+  digestToHexByteString ((hash (B.packChars plaintext)) :: Digest MD5)

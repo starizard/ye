@@ -22,6 +22,7 @@ executable ye
   -- other-extensions:
   extensions:     ScopedTypeVariables
   build-depends:    base
+                   , cryptohash
                    , network
                    , stm
                    , data-default-class

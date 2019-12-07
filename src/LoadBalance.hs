@@ -23,14 +23,16 @@ startLoadBalance config = do
   NS.setSocketOption sock NS.ReuseAddr 1
   NS.bind sock (NS.addrAddress addr)
   NS.listen sock backLog
-  print $ "Listening on port " <> port
+  putStrLn $ "Listening on port " <> port
   dispatcher config sock
 
 dispatcher :: Config -> NS.Socket -> IO ()
 dispatcher config sock = do
   let backends =  (splitOn ":") <$> (splitOn "," (remoteHosts config))
-      balancingStrategy = LBS.ROUND_ROBIN
-  balancer <- LBS.getBalancer balancingStrategy
+  balancer <- LBS.getBalancer (balancingStrategy' config)
+  putStrLn $ "Balancing traffic to backends: " 
+  mapM_ (putStrLn . show )  backends  
+  putStrLn $ "Using balancing Strategy " <>  (balancingStrategy config)
   forever $ do
     (conn, peer) <- NS.accept sock
     let [clientHost, clientPort] = (splitOn ":" (show peer))
@@ -53,8 +55,6 @@ dispatcher config sock = do
     forkIO $ messageReader conn downstreamChannel 
     -- Drain message from channel to backend
     forkIO $ drainChannelToSockets downstreamChannel (balancer requestState)
-
-
 
   where connectBackend config [host, port] = connectToServer config host port
         connectBackend config [host] = connectToServer config host "80"
